@@ -1,0 +1,369 @@
+---
+title: "Body Fat Data Project"
+author: "Vanessa Kusi"
+date: "December 28, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Summary 
+This project uses the Bodyfat dataset from StatLib. The data includes 15 variables of various body measurements and estimates of the percentage of body fat determined by underwater weighing for 252 men. The goal of this project was to determine the best regression model to predict bodyfat and weight. 
+
+```{r}
+library(psych)
+library(caret)
+library(car)
+```
+
+
+## Data Preparation 
+
+### Load the Data into R and View a Summary of the Data
+```{r cars}
+body_fat <- read.csv("bodyfat.csv",header = TRUE)
+```
+
+### View Attributes and Dimension of the Data
+```{r}
+names(body_fat)
+dim(body_fat)
+```
+There are a total of 252 observations and 15 Attributes in the Dataset. All of them are quantitative. Each one of them is explained below.
+
+ Density determined from underwater weighing
+ Percent body fat from Siri's (1956) equation
+ Age (years)
+ Weight (lbs)
+ Height (inches)
+ Neck circumference (cm)
+ Chest circumference (cm)
+ Abdomen 2 circumference (cm)
+ Hip circumference (cm)
+ Thigh circumference (cm)
+ Knee circumference (cm)
+ Ankle circumference (cm)
+ Biceps (extended) circumference (cm)
+ Forearm circumference (cm)
+ Wrist circumference (cm)
+
+### Missing Values
+Determine if there are any missing values.
+```{r}
+sum(is.null(body_fat))
+```
+There are no missing values in the dataset.
+
+### View Structure of Dataset
+```{r}
+str(body_fat)
+```
+
+All variables are numeric expect for Age, So converted Age to a numeric variable.
+
+```{r}
+as.numeric(body_fat$Age)
+is.numeric(body_fat$Age)
+```
+
+The below summary gives us the Minimum and Maximum values for all the attributes along with other values. 
+```{r}
+summary(body_fat)
+```
+
+To help get a better understanding of the distrubition of the variables, calculated the standard deviation of each attribute. 
+```{r}
+sapply(body_fat, sd)
+```
+
+### Distribution and Outliers
+
+Determine Distribution of the Attributes.
+```{r}
+library(psych)
+multi.hist(body_fat)
+```
+All the attributtes expect for Weight, Height, Hip, Neck, Abdomen and Ankle appear normally distributed. Need tolook closer at these 6 attributes to determine why they are not normally distributed.  
+
+Determine Any Outlier Values.
+To further investigate attributes created boxplots to get a better understanding of the distribution.
+```{r}
+boxplot(body_fat)
+```
+
+####Height Outlier
+```{r}
+boxplot(body_fat$Height, main = "Height Boxplot", col = "green")
+boxplot.stats(body_fat$Height)
+```
+
+```{r}
+subset(body_fat,body_fat$Height == 29.50)
+```
+
+Outlier identified was a height of 29.5 inches. Looking for this observation in the dataset age associated with this height is 44 and bodyfat recorded was 32.9%. Seems like there may be an error because it seems very unlikely that any person especially an older male with high bodyfat (in the obese range) would be very short. So this record can be removed.
+
+####Hip Outliers
+```{r}
+boxplot(body_fat$Hip, main = "Hip", col = "yellow")
+boxplot.stats(body_fat$Hip)
+```
+
+```{r}
+hip_outliers<- boxplot(body_fat$Hip, plot = FALSE)$out
+body_fat[which(body_fat$Hip %in% hip_outliers),]
+```
+Found 3 outliers for the Hip attribute. Further investigation finds that these 3 records have high bodyfat percentages (labelled as obese) which would explain the large/abnormal hip size. 
+
+####Weight Outliers
+```{r}
+boxplot(body_fat$Weight, main = "Weight", col = "blue")
+boxplot.stats(body_fat$Weight)
+
+```
+
+```{r}
+weight_outliers<- boxplot(body_fat$Weight, plot = FALSE)$out
+body_fat[which(body_fat$Weight %in% weight_outliers),]
+```
+
+Two of these outliers are classified as outliers for the Hip attribute. I removed the 2 outlier attributes for Weight that are related to outliers for Hip and left the other Hip outlier (labelled 116.1) because it just falls outside the maximum value for Hip (115.50) and I don't want to remove too many Obese bodyfat records as it could impact the regression model.
+
+#### Ankle Outliers
+```{r}
+boxplot(body_fat$Ankle)
+boxplot.stats(body_fat$Ankle)
+```
+
+
+```{r}
+ankle_outliers<- boxplot(body_fat$Ankle, plot = FALSE)$out
+body_fat[which(body_fat$Ankle %in% ankle_outliers),]
+```
+
+3 outliers where detected for the Ankle attribute. the first one has a Ankle measurement of 33.9 cm with a Bodyfat measurement of 11.9. Based on the American Council on Exercise Bodyfat table this would follow under Athletes. 
+
+```{r}
+subset(body_fat, bodyfat >= 6 & bodyfat <= 14, select = c(bodyfat, Ankle))
+```
+
+Investigating bodyfat in the Athletes range (6% -14%) and comparing it to Ankle measurement. This record of 33.9 cm in Ankle is an outlier for this category. The second outlier (29.6 cm) is an outlier for weight so removing it from weight will so remove it here. I have also decided to remove the 3rd outlier since it falls far outside the maximum value. 
+
+
+####Bodyfat Outliers
+```{r}
+boxplot(body_fat$bodyfat, main = "Bodyfat Boxplot")
+boxplot.stats(body_fat$bodyfat)
+subset(body_fat, body_fat$bodyfat < 2.00)
+```
+
+Creating a boxplot for bodyfat to determine the outliers only shows one outlier above the maximum value. However looking at the summary from earlier the minimum record for bodyfat is 0. Having 0 bodyfat is very extreme and possibility fatal and could be an error. According to the American Council on Exercise the minimum or essential level of fat in Men is 2-5%. So I will remove this record and other possible records that have less than 2% bodyfat.
+
+####Removing Outliers
+```{r}
+bodyfat_2 <- body_fat[-c(42,39,41,31, 86, 172, 182),]
+multi.hist(bodyfat_2)
+boxplot(bodyfat_2, main = "Boxplot of all Variables After Removing Outliers")
+```
+
+I decided to remove the outliers that didn't make sense and could possibly be an error as I wanted to model the data better and predict future data better. Based on the Boxplot there are still some outliers. However I don't want to remove all the outliers because I don't want to remove what could be valuable information. Now the outliers are closer to the maximum values so there are not as extreme. The data is also now more normally distributed.   
+
+
+###Correlation Between Attributes
+```{r}
+library(corrplot)
+cor_table<-cor(bodyfat_2)
+corrplot(cor_table, method = 'ellipse')
+```
+
+I created a correlation matrix to determine the correlation between attributes. Most of the attributes in the dataset have moderate to high correlation with each other. The highest correlation exists between Density and Bodyfat which makes sense since Density is used to calculate Bodyfat. There is a strong negative relationship between them (-0.987), so decresing density increases bodyfat and vice versa. The weakest correlation exists between Age and Weight. 
+###Training and Test Sets
+```{r}
+library(caTools)
+set.seed(15)
+sample_df <- sample.split(bodyfat_2$bodyfat,SplitRatio = 0.70)
+train_df <- subset(bodyfat_2, sample_df == TRUE)
+test_df <- subset (bodyfat_2, sample_df == FALSE)
+```
+
+Since this dataset has a lot of variables that are highly correlated some of these variables can be removed when building the model. To determine which variables to eliminate, I used the findCorrelation in the Caret package to find highly correlated attributes. I used a cutoff of 0.60 to remove attributes with an absolute correlation of 0.60 or higher. I Chose 0.60 as the cutoff because generally a correlation of 0.60 or more represents a high correlation.
+
+```{r}
+library(caret)
+highly_correlated <- findCorrelation(cor_table,cutoff = 0.6)
+highly_correlated
+#or only use training set
+findCorrelation(cor(train_df), cutoff = 0.6)
+```
+The results show the indexes of the variables with the largest mean absolute correlation meaning they are highly correlated with the other attributes. These are Weight, Hip, Abdomen, Chest, Thigh, Knee, Neck, Bicpes and Bodyfat. 
+
+
+## Modelling 
+
+###Bodyfat Model With All Attributes
+
+```{r}
+model1 <- lm(bodyfat~.,train_df)
+summary(model1)
+```
+Using 0.05 as our significance level, Density is the only significant variable for predicting bodyfat. 
+
+###Bodyfat Model Removing Only Density
+Since Density is used to calculate bodyfat it makes sense that it is very significant in predicting bodyfat. The plot below shows that the relationship between Density and Bodyfat is almost perfectly linear with a correlation of -0.995.
+
+```{r}
+plot(train_df$Density, train_df$bodyfat, main = "Relationship Between Density and Bodyfat", xlab = "Density", ylab = "Bodyfat")
+cor(train_df$Density, train_df$bodyfat)
+```
+
+The regression results with only Density and Bodyfat are also significant.
+```{r}
+model2 <- lm(bodyfat~.,train_df[c(1,2)])
+summary(model2)
+```
+
+However because the methods to measure density are not easily accessible to the average person. I tried creating a regression model without it.
+```{r}
+model3 <- lm(bodyfat~.,train_df[-c(1)])
+summary(model3)
+```
+
+Without Density the Adjusted R-Squared does reduce but is still a high value at 70.93%. Abdomen and Wrist are now significant variables at a significance level of 0.05 in predicting Bodyfat.
+
+
+```{r}
+#install.packages("car")
+#model with just Age and Abdomen 
+model4 <-lm(bodyfat~.,train_df[c(2,8,15)])
+summary(model4)
+library(car)
+vif(model4)
+```
+
+The values for variance inflation factor (VIF) for Adbomen and Wrist are both below 5. Therefore collinearity is not a problem between these 2 variables and both can be left in the model.
+
+The performance of the model between only Abdomen and Wrist is low compared to the model with only Density. In model2, with Density removed Age also showed up as a significant variable but at an alpha of 10%. Building a model with Age, Adbomen and Wrist is shown below.
+
+```{r}
+model5<-lm(bodyfat~.,train_df[c(2,3,8,15)])
+summary(model5)
+vif(model5)
+```
+Alone, all 3 variables show up as significant with an alpha of 5%. The Adjusted R^2 also increased compared to the model with only Abdomen and wrist. Looking at VIF the values are also below 5 so there is no problem with multicollinearity. Thus this will be the final model for predicting bodyfat.
+
+
+##Models with Weight
+
+```{r}
+modelA<- lm(Weight~., train_df)
+summary(modelA)
+```
+
+Using all attributes to predict weight also provides significant results. The variables: Age, Height, Neck, Chest, Abdomen, Hip, Thigh, Ankle, Biceps are all significant variables at the 0.05 significance level.
+
+```{r}
+modelB<-lm(Weight~., train_df[c(3,4,5,6,7,8,9,10,12,13)])
+summary(modelB)
+```
+
+Age is no longer significant at 0.05 so removed.
+
+```{r}
+modelC<-lm(Weight~., train_df[c(4,5,6,7,8,9,10,12,13)])
+summary(modelC)
+```
+
+Since we know that may of the variables are highly correlated performed a test to help with multilinearity. 
+
+```{r}
+vif(modelC)
+```
+Chest, Abdomen, Hip and Thigh all exceed VIF values of 5, a sign a problematic amount of collinearity (James et al. 2014). These variables will be removed one at a time starting with Hip, the variable with the largest amount of VIF to test how the VIF and the model changes as they are removed.
+
+```{r}
+#without Hip
+vif(lm(Weight~., train_df[c(4,5,6,7,8,10,12,13)]))
+```
+
+```{r}
+#without Chest and Hip
+vif(lm(Weight~., train_df[c(4,5,6,8,10,12,13)]))
+summary(lm(Weight~., train_df[c(4,5,6,8,10,12,13)]))
+```
+
+```{r}
+#without Hip, Abdomen and Chest
+vif(lm(Weight~., train_df[c(4,5,6,10,12,13)]))
+summary(lm(Weight~., train_df[c(4,5,6,10,12,13)]))
+```
+
+
+```{r}
+#without Hip, Abdomen, Chest and Thigh
+vif(lm(Weight~., train_df[c(4,5,6,12,13)]))
+summary(lm(Weight~., train_df[c(4,5,6,12,13)]))
+```
+
+The model without Chest and Hip removes multicollinearity and produces similar results as the model with these two variables included (modelC). Which is a good sign because it leads to a simpler model without compromising the model accuracy.
+
+```{r}
+modelD<-lm(Weight~., train_df[c(4,5,6,8,10,12,13)])
+summary(modelD)
+```
+
+```{r}
+vif(modelD)
+```
+
+### Prediction
+
+Predicting Bodyfat using the Test Set
+```{r}
+bodyfat_prediction<-predict(model5, test_df)
+#creating new column for predicted values
+test_df$predicted_bodyfat <-bodyfat_prediction
+head(test_df[c(2,16)], n=10)
+```
+
+Predicting Weight Using the Test Set
+```{r}
+weight_prediction <-predict(modelD, test_df)
+#creating new column for predicted values
+test_df$predicted_weight <-weight_prediction
+head(test_df[c(4,17)], n=10)
+```
+
+In order to determine how effective my models are in predicting, I need to calculate and compared the RMSE.
+
+```{r}
+error_bodyfat<- bodyfat_prediction -test_df$bodyfat
+#RMSE
+sqrt(mean(error_bodyfat^2))
+```
+
+```{r}
+error_weight <- weight_prediction - test_df$Weight
+#RMSE 
+sqrt(mean(error_weight^2))
+```
+
+In order to compare the RMSE for the Test and Training Sets need to calculate RMSE for the training sets based on the residuals from the models. 
+
+```{r}
+mse_bodyfat <- mean(residuals(model5)^2)
+mse_bodyfat
+rmse_bodyfat <- sqrt(mse_bodyfat)
+rmse_bodyfat
+```
+
+
+```{r}
+mse_weight <- mean(residuals(modelD)^2)
+mse_weight
+rmse_weight <- sqrt(mse_weight)
+rmse_weight
+```
+
+The RMSE in the test sets is slightly higher than the training sets. This slight difference between the two is an indicator of a good model. There is no overfitting or underfitting. 
+
